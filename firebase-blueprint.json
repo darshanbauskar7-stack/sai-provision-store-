@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "Review": {
+      "title": "CustomerReview",
+      "description": "Real, authenticated customer review for Sai Provision & General Stores",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the review (matches userId for one review per user)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the verified customer"
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Customer display name entered upon submission"
+        },
+        "rating": {
+          "type": "integer",
+          "description": "Star rating from 1 to 5"
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 1000,
+          "description": "Customer's actual written feedback / experience"
+        },
+        "locality": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Customer area or colony in Jalgaon"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Moderation status (only approved reviews are displayed publicly)"
+        },
+        "isVerifiedPurchaser": {
+          "type": "boolean",
+          "description": "Only marked true if store admin explicitly verifies a real purchase"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Masked or verified phone number of the customer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the review was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the review was last edited"
+        }
+      },
+      "required": ["userId", "customerName", "rating", "comment", "status", "createdAt"]
+    },
+    "Admin": {
+      "title": "StoreAdmin",
+      "description": "Admin identity authorized to moderate reviews",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the store administrator"
+        },
+        "email": {
+          "type": "string",
+          "description": "Administrator email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "superadmin"],
+          "description": "Admin authorization level"
+        }
+      },
+      "required": ["userId", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Collection of customer reviews with one document per verified customer (document ID is the customer's userId)"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Collection of authorized store administrators"
+    }
+  }
+}

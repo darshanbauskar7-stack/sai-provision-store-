@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'darshanbauskar7@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrappedAdmin() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll(['userId', 'customerName', 'rating', 'comment', 'status', 'createdAt', 'isVerifiedPurchaser']) &&
+        data.keys().hasOnly(['userId', 'customerName', 'rating', 'comment', 'status', 'createdAt', 'updatedAt', 'locality', 'phoneNumber', 'isVerifiedPurchaser']) &&
+        data.userId is string && data.userId == request.auth.uid &&
+        data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 80 &&
+        data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+        data.comment is string && data.comment.size() >= 5 && data.comment.size() <= 1000 &&
+        data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
+        data.isVerifiedPurchaser is bool &&
+        (!('locality' in data) || (data.locality is string && data.locality.size() <= 100)) &&
+        (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 20));
+    }
+
+    // Customer Reviews Collection (one review per verified user, documentId == userId)
+    match /reviews/{reviewId} {
+      allow get: if resource.data.status == 'approved' ||
+        (isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin()));
+
+      allow list: if resource.data.status == 'approved' ||
+        (isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin()));
+
+      // Customer creates their own review: must be authenticated, reviewId == uid, status starts as pending
+      allow create: if isSignedIn() &&
+        isValidId(reviewId) &&
+        request.auth.uid == reviewId &&
+        isValidReview(request.resource.data) &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.isVerifiedPurchaser == false &&
+        request.resource.data.createdAt == request.time;
+
+      // Customer can update their own review (reverts to pending for re-moderation unless admin approved)
+      // Admin can update status and verified purchase flags
+      allow update: if isSignedIn() &&
+        isValidId(reviewId) && (
+          // Admin moderation action
+          (isAdmin() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'isVerifiedPurchaser', 'updatedAt']) &&
+            request.resource.data.status in ['pending', 'approved', 'rejected'] &&
+            request.resource.data.updatedAt == request.time
+          ) ||
+          // User editing their own review
+          (request.auth.uid == reviewId &&
+            request.resource.data.userId == resource.data.userId &&
+            request.resource.data.createdAt == resource.data.createdAt &&
+            request.resource.data.isVerifiedPurchaser == resource.data.isVerifiedPurchaser &&
+            isValidReview(request.resource.data) &&
+            request.resource.data.updatedAt == request.time &&
+            (isAdmin() || request.resource.data.status == 'pending') &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customerName', 'rating', 'comment', 'locality', 'phoneNumber', 'updatedAt', 'status'])
+          )
+        );
+
+      // Customer can delete their own review, or admin can delete
+      allow delete: if isSignedIn() &&
+        isValidId(reviewId) &&
+        (request.auth.uid == reviewId || isAdmin());
+    }
+
+    // Admins Collection (read-only for admins, no client writes to prevent privilege escalation)
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}
